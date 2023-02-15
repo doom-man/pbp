@@ -1,31 +1,35 @@
 # pbp
 
-lldb 可以对未加载模块的符号下断点，无法对未加载模块的偏移下断点。
+PDP - Python scipt for lldb , support android only.
+
+## Key Feature
+
+* lldb debug script , use for setting breakpoint at unloaded module. 
 
 
 
-![image-20230105181844505](http://oss.pareto.fun/img/image-20230105181844505.png)
+## Installation
 
-该插件实现在未加载模块的偏移处断点。
-
-目前仅支持android
-
-
-## 使用说明
-
-```bash
-command script i /path/to/script
-pbp libxxx.so 0x123
-c
+```
+git clone https://github.com/doom-man/pbp ~/pbp
+echo "command script i ~/pbp/pbp.py"  >> ~/.lldbinit
+echo "DONE! enjoy"
 ```
 
-恢复程序正常运行。
 
 
 
-## 演示效果
+## usage
 
-![image-20230124180651960](README.assets/image-20230124180651960.png)
+```bash
+pbp libxxx.so 0x123
+```
 
-对比lldb对未加载模块符号下断点，该脚本对偏移的执行效率要低了不少，lldb如何去判断模块的被加载时机？？。
+
+
+## ScreenShot
+
+![image-20230124180651960](doc/README.assets/image-20230124180651960.png)
+
+
 
