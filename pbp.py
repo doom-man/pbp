@@ -3,10 +3,8 @@ import shlex
 import lldb
 import logging
 
-logger = logging.getLogger("pbp")
-ch = logging.StreamHandler()
-ch.setLevel(logging.INFO)
-logger.addHandler(ch)
+logging.basicConfig(level=logging.DEBUG, filename="py_log.log",filemode="w",
+                    format="%(asctime)s %(levelname)s %(message)s")
 
 class GlobalOptions(object):
     symbols = {}
@@ -21,23 +19,23 @@ def constructor_callback(frame, bpnum, errr):
     offset = GlobalOptions.symbols["offset"]
     targetSo = GlobalOptions.symbols["targetSo"]
     prog = GlobalOptions.symbols["prog"]
-    logger.debug(type(bpnum))
+    logging.debug(type(bpnum))
     bp_constructor = bpnum.GetBreakpoint()
     tm = prog.module[targetSo]
     if tm != None:
-        logger.info("tarSo:\t "+targetSo+"\t loaded")
+        logging.info("tarSo:\t "+targetSo+"\t loaded")
 
         returnObject = lldb.SBCommandReturnObject()
         interpreter.HandleCommand('image list -o '+targetSo, returnObject)
         output = returnObject.GetOutput()
 
         match =re.search(r'\b0x[0-9a-fA-F]+\b', output).group()
-        logger.info(match)
+        logging.info(match)
         baseAddr = int(match, 16)
         bp_constructor.SetEnabled(False)
         addr = baseAddr + offset
 
-        logger.info(hex(addr))
+        logging.info(hex(addr))
         prog.BreakpointCreateByAddress(addr)
     return False
 
