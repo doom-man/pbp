@@ -27,6 +27,7 @@ def constructor_callback(frame, bpnum, errr):
 
         returnObject = lldb.SBCommandReturnObject()
         interpreter.HandleCommand('image list -o '+targetSo, returnObject)
+        logging.info("tarSo:\t" + str(returnObject.Succeeded()))
         output = returnObject.GetOutput()
 
         match =re.search(r'\b0x[0-9a-fA-F]+\b', output).group()
@@ -57,5 +58,15 @@ def pbp(debugger, command, result, internal_dict):
     GlobalOptions.addValue("targetSo" , targetSo)
     GlobalOptions.addValue("offset" , offset)
 
-    bp_constructor = prog.BreakpointCreateByRegex("call_constructor")
-    bp_constructor.SetScriptCallbackFunction("pbp.constructor_callback")
+    interpreter = lldb.debugger.GetCommandInterpreter()
+    returnObject = lldb.SBCommandReturnObject()
+    interpreter.HandleCommand('image list -o '+targetSo, returnObject)
+    if returnObject.Succeeded() == True:
+        output = returnObject.GetOutput()
+        match =re.search(r'\b0x[0-9a-fA-F]+\b', output).group()
+        baseAddr = int(match, 16)
+        addr = baseAddr + offset
+        prog.BreakpointCreateByAddress(addr)
+    else:
+        bp_constructor = prog.BreakpointCreateByRegex("call_function")
+        bp_constructor.SetScriptCallbackFunction("pbp.constructor_callback")
