@@ -1,72 +1,140 @@
-import re
-import shlex
-import lldb
+# This is a sample Python script.
+
+# Press Shift+F10 to execute it or replace it with your code.
+# Press Double Shift to search everywhere for classes, files, tool windows, actions, and settings.
+__version__ = "1.0.8"
+
+import argparse
+import subprocess
 import logging
+import time
+import os
+import tempfile
 
-logging.basicConfig(level=logging.DEBUG, filename="py_log.log",filemode="w",
-                    format="%(asctime)s %(levelname)s %(message)s")
+from debugActivity.lldbtools.lldbtools import pushLLDBServer, grantPermission, startLLDBServer
 
-class GlobalOptions(object):
-    symbols = {}
+logger = logging.getLogger("debugActivity")
 
-    @staticmethod
-    def addValue(key, value):
-        GlobalOptions.symbols[key] = value
+parser = argparse.ArgumentParser(
+    prog='debugActivity',
+    description='start a debug activity',
+    epilog='-p packageName\n -a AcivityName -s signApkPath')
 
-# 实现判断模块是否加载的逻辑
-def constructor_callback(frame, bpnum, errr):
-    interpreter = lldb.debugger.GetCommandInterpreter()
-    offset = GlobalOptions.symbols["offset"]
-    targetSo = GlobalOptions.symbols["targetSo"]
-    prog = GlobalOptions.symbols["prog"]
-    logging.debug(type(bpnum))
-    bp_constructor = bpnum.GetBreakpoint()
-    tm = prog.module[targetSo]
-    if tm != None:
-        logging.info("tarSo:\t "+targetSo+"\t loaded")
-
-        returnObject = lldb.SBCommandReturnObject()
-        interpreter.HandleCommand('image list -o '+targetSo, returnObject)
-        logging.info("tarSo:\t" + str(returnObject.Succeeded()))
-        output = returnObject.GetOutput()
-
-        match =re.search(r'\b0x[0-9a-fA-F]+\b', output).group()
-        logging.info(match)
-        baseAddr = int(match, 16)
-        bp_constructor.SetEnabled(False)
-        addr = baseAddr + offset
-
-        logging.info(hex(addr))
-        prog.BreakpointCreateByAddress(addr)
-    return False
+scriptPath = os.path.split(os.path.realpath(__file__))[0]
 
 
-# 使用两个参数，分别代表模块和偏移量
-def __lldb_init_module(debugger, internal_dict):
-    debugger.HandleCommand('command script add -f pbp.pbp pbp')
+def sign(path):
+    cwd = os.getcwd()
+    fileName = os.path.splitext(path)[0]
+    suffix = os.path.splitext(path)[-1]
+    outpath = os.path.join(cwd, path)
+    tmpDir = tempfile.TemporaryDirectory()
+    tmpApk = os.path.join(tmpDir.name, "temp.apk")
+    print(tmpApk)
+    zipArgs = "zipalign -f " + " -v 4 " +  outpath + "  " + tmpApk
+    print(zipArgs)
+    subprocess.run(zipArgs, shell=True, check=True)
+
+    apksigner = os.path.join(scriptPath, "apksigner", "apksigner.jar")
+    jsk = os.path.join(scriptPath, "apksigner", "pareto.jks")
+    signArgs = "java -jar " + apksigner + " sign " + "--ks " + jsk + " --ks-pass pass:pareto " + "--in " + tmpApk + " --out " + fileName+"_signed"+suffix
+    subprocess.run(signArgs, shell=True, check=True)
 
 
-def pbp(debugger, command, result, internal_dict):
-    prog = debugger.GetSelectedTarget()
-    debugger.SetAsync(False)
-    GlobalOptions.addValue("prog",prog)
+# def startLLDBServer():
 
-    commands = shlex.split(command)
-    targetSo = commands[0]
-    offset = int(commands[1], 16)
 
-    GlobalOptions.addValue("targetSo" , targetSo)
-    GlobalOptions.addValue("offset" , offset)
+def main():
+    # parser.add_argument('filename')
+    parser.add_argument('-p', '--package')
+    parser.add_argument('-a', '--activity')
+    parser.add_argument('-s', '--sign')
+    parser.add_argument('-l', '--lldbserver', action='store_true')
+    parser.add_argument('-P', '--process', action='store_true')
+    parser.add_argument('-f' , '--frida' , action='store_true')
 
-    interpreter = lldb.debugger.GetCommandInterpreter()
-    returnObject = lldb.SBCommandReturnObject()
-    interpreter.HandleCommand('image list -o '+targetSo, returnObject)
-    if returnObject.Succeeded() == True:
-        output = returnObject.GetOutput()
-        match =re.search(r'\b0x[0-9a-fA-F]+\b', output).group()
-        baseAddr = int(match, 16)
-        addr = baseAddr + offset
-        prog.BreakpointCreateByAddress(addr)
-    else:
-        bp_constructor = prog.BreakpointCreateByRegex("call_function")
-        bp_constructor.SetScriptCallbackFunction("pbp.constructor_callback")
+    args = parser.parse_args()
+    package = args.package
+    activity = args.activity
+
+    print("process: " + str(args.process))
+    if args.lldbserver != False:
+        pushLLDBServer()
+        grantPermission()
+        startLLDBServer()
+        return
+    elif args.sign != None:
+        sign(args.sign)
+        return
+    elif args.frida != False:
+        p = subprocess.Popen("adb shell ", shell=True, stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True)
+        commands = [
+            "su",
+            "cd /data/local/tmp",
+            "ls",
+            "nohup ./frida-server &",
+        ]
+        try:
+            out, err = p.communicate(input="\n".join(commands), timeout=4)  # 不设置超时，就会卡在这里如果你知道为什么请告诉我
+        except subprocess.TimeoutExpired:
+            p.kill()
+            logger.debug("if nothing wrong , frida launched successful.\nor u can commit a issue\n")
+    
+        return
+    # -P 枚举进程，然后比较
+    elif args.process == True:
+        pscom = "adb shell ps -A -o PID -o NAME"
+        prcList0 = set()
+        prcList1 = set()
+        cmdResult = subprocess.run(pscom , shell=True , check=True , capture_output=True).stdout
+        lines = cmdResult.split(b'\r\n')
+        for i in lines:
+            prcList0.add(i.strip())
+
+        input()
+        cmdResult = subprocess.run(pscom , shell=True , check=True , capture_output=True).stdout
+        lines = cmdResult.split(b'\r\n')
+        for i in lines:
+            prcList1.add(i.strip())
+
+        diffPrc = list(prcList1.difference(prcList0))
+        for i in diffPrc:
+            print(i)
+
+        return
+    elif package == None or activity == None:
+        parser.print_help()
+        exit(0)
+
+    startcom = "adb shell am start -D {0}/{1}".format(package, activity)
+
+    subprocess.run(startcom, shell=True, check=True)
+    time.sleep(1)
+
+    if os.name in ('nt', 'dox'):
+        getpid = "adb shell \" ps | grep {0} | awk '{{print $2}}'\"".format(package);
+    elif os.name in ('linux', 'osx', 'posix'):
+        getpid = "adb shell \" ps -A| grep {0} | awk '{{print \$2}}'\"".format(package);
+
+    # cmd
+    # getpid = "adb shell \" ps -A| grep {0} | awk '{{print $2}}'\"".format(package);
+    # bash
+    # getpid = "adb shell \" ps -A| grep {0} | awk '{{print \$2}}'\"".format(package);
+    # command
+    # getpid = "adb shell \" ps | grep {0} | awk '{{print $2}}'\"".format(package);
+    spid = subprocess.run(getpid, shell=True, capture_output=True, text=True).stdout
+
+    print("app pid :" + spid)
+
+    spid = "adb forward tcp:8700 jdwp:{0}".format(spid)
+    spid = spid.replace('\n', '')
+    logger.info(spid)
+    subprocess.run(spid, shell=True)
+
+    input("Press Enter to run app...")
+    proc = subprocess.run("jdb -connect com.sun.jdi.SocketAttach:hostname=localhost,port=8700", shell=True, text=True)
+
+
+if __name__ == '__main__':
+    logging.basicConfig(level=logging.INFO)
+    main()
